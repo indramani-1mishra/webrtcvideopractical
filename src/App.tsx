@@ -7,7 +7,11 @@ import VideCallSection from './component/goglemapui/videcallsection';
 
 // 1. Initialize the socket outside the component 
 // so it is created only once.
- export const socket = io('http://localhost:3000');
+
+const mode ="production";
+const url= mode==="production"?"https://implement-ci-cd-test.onrender.com":"http://localhost:5173";
+console.log(url);
+ export const socket = io(url);
 
 export default function App() {
 return (
