@@ -5,7 +5,7 @@ const containerStyle = {
   height: "500px",
 };
 
-const GoogleMapUi = ({workerLocation}) => {
+const GoogleMapUi = ({ workerLocation = { lat: 0, lng: 0 } }) => {
   const { isLoaded } = useLoadScript({
     googleMapsApiKey: "AIzaSyAVAAsaGnWItH1B-29rQAmY2FiHn22mTA8",
   });

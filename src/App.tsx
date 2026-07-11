@@ -1,10 +1,9 @@
-import React, { useEffect } from 'react';
-import { Route,Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import GoogleMapUi from './component/goglemapui/GoogleMapUi.jsx';
-import Getlocation from './component/goglemapui/Getlocation.jsx';
-import TestUrlSearchparam from './component/goglemapui/TestUrlSearchparam.jsx';
-import VideCallSection from './component/goglemapui/videcallsection.jsx';
+import GoogleMapUi from './component/goglemapui/GoogleMapUi';
+import Getlocation from './component/goglemapui/Getlocation';
+import TestUrlSearchparam from './component/goglemapui/TestUrlSearchparam';
+import VideCallSection from './component/goglemapui/videcallsection';
 
 // 1. Initialize the socket outside the component 
 // so it is created only once.
