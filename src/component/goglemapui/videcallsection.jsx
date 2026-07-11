@@ -162,7 +162,7 @@ const onCallhandler = async(callreciverId)=>{
             <video
                 ref={remoteVideoStream}
                 autoPlay
-                muted
+                
                 playsInline 
                 style={{ height: "200px", width: "300px" }} // Added 'px' to width
             />
