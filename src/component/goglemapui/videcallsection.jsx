@@ -15,7 +15,7 @@ export default function VideoCallSection() {
     const [curentuser,setcurrentuser] = useState('');
     const [allusers,setallusers]=useState(null);
     const [currentCallinguser, setcurrtCallinguser] = useState('');
-    const [useFallbackVideo, setUseFallbackVideo] = useState(false);
+    //const [useFallbackVideo, setUseFallbackVideo] = useState(false);
     
    
     
@@ -49,7 +49,7 @@ export default function VideoCallSection() {
             });
         } catch (error) {
             console.warn("Media permission denied or unavailable, using fallback video.", error);
-            setUseFallbackVideo(true);
+           
         }
 
         if (stream) {
@@ -61,14 +61,7 @@ export default function VideoCallSection() {
             stream.getTracks().forEach((track) => {
                 peerConnection.current.addTrack(track, stream);
             });
-        } else {
-            if (localVideoRef.current) {
-                localVideoRef.current.srcObject = null;
-                localVideoRef.current.src = testVideo;
-                localVideoRef.current.muted = true;
-                localVideoRef.current.load();
-            }
-        }
+        } 
 
         socket.on("getallusers",(users)=>{
             console.log(JSON.stringify(users));
@@ -124,7 +117,7 @@ export default function VideoCallSection() {
 
          socket.emit('answer',{senderId:receiverId,receiverId:senderId,answer});
   
-        })
+        }) 
 
      socket.on("answer",async(data)=>{
       const {senderId,receiverId,answer} = data;
@@ -219,7 +212,6 @@ const onCallhandler = async(callreciverId)=>{
     {/* Remote video — fills the call screen */}
     <video
       ref={remoteVideoStream}
-      src={useFallbackVideo ? testVideo : undefined}
       autoPlay
       playsInline
       className="absolute inset-0 h-full w-full object-cover"
@@ -239,10 +231,10 @@ const onCallhandler = async(callreciverId)=>{
     <div className="absolute top-3 right-3 sm:bottom-4 sm:right-4 sm:top-auto w-24 h-32 sm:w-28 sm:h-40 md:w-32 md:h-44 rounded-xl overflow-hidden border-2 border-white/20 shadow-lg bg-black">
       <video
         ref={localVideoRef}
-        src={useFallbackVideo ? testVideo : undefined}
+        
         autoPlay
         muted
-        loop={useFallbackVideo}
+       
         playsInline
         className="h-full w-full object-cover"
       />
