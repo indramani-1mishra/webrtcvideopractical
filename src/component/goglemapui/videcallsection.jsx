@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { socket } from "../../App";
 import testVideo from './testing.mp4'
-import { FaVideo, FaUserPlus, FaCircle } from "react-icons/fa";
+import { FaVideo, FaUserPlus, FaCircle, FaPhone, FaCamera } from "react-icons/fa";
 import { IoIosArrowForward } from "react-icons/io";
 
 export default function VideoCallSection() {
@@ -22,11 +22,11 @@ export default function VideoCallSection() {
     const [isCallActive, setIsCallActive] = useState(false);
     //const [useFallbackVideo, setUseFallbackVideo] = useState(false);
     
-   
-    
-    
+    const initPeerConnection = () => {
+        if (peerConnection.current) {
+            peerConnection.current.close();
+        }
 
-    useEffect(() => {
         const pc = new RTCPeerConnection({
             iceServers: [
                 {
@@ -35,9 +35,8 @@ export default function VideoCallSection() {
             ],
         });
 
-        peerConnection.current = pc;
-
         pc.ontrack = (event) => {
+            console.log("Remote track received:", event.streams[0]);
             setRemoteStream(event.streams[0]);
         };
 
@@ -52,10 +51,84 @@ export default function VideoCallSection() {
             });
         };
 
+        peerConnection.current = pc;
+
+        // Add local tracks if available
+        if (localStreamref.current) {
+            localStreamref.current.getTracks().forEach((track) => {
+                pc.addTrack(track, localStreamref.current);
+            });
+        }
+
+        return pc;
+    };
+
+    const handleEndCall = (shouldEmit = true) => {
+        console.log("Ending call...");
+        
+        // 1. Close peer connection
+        if (peerConnection.current) {
+            peerConnection.current.close();
+            peerConnection.current = null;
+        }
+
+        // 2. Clear remote stream
+        setRemoteStream(null);
+        setIsCallActive(false);
+
+        // 3. Notify remote user if needed
+        if (shouldEmit && currentCallingUserRef.current) {
+            socket.emit("end-call", {
+                senderId: currentUserRef.current,
+                receiverId: currentCallingUserRef.current,
+            });
+        }
+
+        // 4. Reset calling user refs/states
+        setcurrtCallinguser('');
+        currentCallingUserRef.current = '';
+    };
+
+    const takeScreenshot = () => {
+        if (!remoteStream || !remoteVideoStream.current) {
+            alert("No remote video stream available to capture.");
+            return;
+        }
+
+        const video = remoteVideoStream.current;
+        const canvas = document.createElement("canvas");
+        
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            try {
+                const dataUrl = canvas.toDataURL("image/png");
+                const link = document.createElement("a");
+                link.download = `screenshot-${currentCallinguser || "remote"}-${Date.now()}.png`;
+                link.href = dataUrl;
+                link.click();
+            } catch (err) {
+                console.error("Screenshot capture failed:", err);
+                alert("Failed to capture screenshot. Canvas may be tainted by cross-origin video.");
+            }
+        }
+    };
+
+    useEffect(() => {
         socket.on("getallusers", (users) => {
             console.log(JSON.stringify(users));
             if (users) {
                 setallusers(users);
+                
+                // If the active calling user has disconnected, end the call locally
+                if (currentCallingUserRef.current && !users[currentCallingUserRef.current]) {
+                    console.log("Active calling user disconnected from server");
+                    handleEndCall(false);
+                }
             }
         });
 
@@ -64,8 +137,10 @@ export default function VideoCallSection() {
             if (!candidate) return;
 
             try {
-                await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                console.log("ICE Candidate Added");
+                if (peerConnection.current) {
+                    await peerConnection.current.addIceCandidate(new RTCIceCandidate(candidate));
+                    console.log("ICE Candidate Added");
+                }
             } catch (err) {
                 console.error("ICE Error", err);
             }
@@ -75,8 +150,12 @@ export default function VideoCallSection() {
             const { senderId, receiverId, offer } = data;
             console.log("Offer received", senderId, receiverId, offer);
 
-            // Synchronously update the ref before setting local description (which triggers ICE candidates)
             currentCallingUserRef.current = senderId;
+            setcurrtCallinguser(senderId);
+            setIsCallActive(true);
+
+            // Re-initialize peer connection for the incoming call
+            const pc = initPeerConnection();
 
             await pc.setRemoteDescription(offer);
             const answer = await pc.createAnswer();
@@ -87,14 +166,19 @@ export default function VideoCallSection() {
                 receiverId: senderId,
                 answer,
             });
-
-            setcurrtCallinguser(senderId);
         });
 
         socket.on("answer", async (data) => {
             const { answer } = data;
             if (!answer) return;
-            await pc.setRemoteDescription(answer);
+            if (peerConnection.current) {
+                await peerConnection.current.setRemoteDescription(answer);
+            }
+        });
+
+        socket.on("end-call", () => {
+            console.log("Call ended by remote user");
+            handleEndCall(false);
         });
 
         async function enableLocalCamera() {
@@ -106,14 +190,12 @@ export default function VideoCallSection() {
             try {
                 let stream;
                 try {
-                    // Try getting both video and audio
                     stream = await navigator.mediaDevices.getUserMedia({
                         video: true,
                         audio: true,
                     });
                 } catch (mediaError) {
                     console.warn("Could not get video and audio (perhaps no microphone?), trying video only...", mediaError);
-                    // Fallback to video only
                     stream = await navigator.mediaDevices.getUserMedia({
                         video: true,
                         audio: false,
@@ -121,7 +203,13 @@ export default function VideoCallSection() {
                 }
                 localStreamref.current = stream;
                 setLocalStream(stream);
-                stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+                
+                // Add tracks to any existing peer connection
+                if (peerConnection.current) {
+                    stream.getTracks().forEach((track) => {
+                        peerConnection.current.addTrack(track, stream);
+                    });
+                }
             } catch (error) {
                 console.error("Camera access failed:", error);
                 alert("Camera access failed! Please check camera permissions, secure context (HTTPS), or connected devices.");
@@ -132,11 +220,14 @@ export default function VideoCallSection() {
 
         return () => {
             localStreamref.current?.getTracks().forEach((track) => track.stop());
-            pc.close();
+            if (peerConnection.current) {
+                peerConnection.current.close();
+            }
             socket.off("getallusers");
             socket.off("ice-candidate");
             socket.off("offer");
             socket.off("answer");
+            socket.off("end-call");
         };
     }, []);
 
@@ -172,18 +263,19 @@ const onRagisterHandler =()=>{
 }
 const onCallhandler = async(callreciverId)=>{
    console.log(`${curentuser} is call to ${callreciverId}`);
-   const offer = await peerConnection.current.createOffer();
-   await peerConnection.current.setLocalDescription(offer)
-   socket.emit("offer",{senderId:curentuser,receiverId:callreciverId,offer});
+   
    setcurrtCallinguser(callreciverId)
    currentCallingUserRef.current = callreciverId;
    setIsCallActive(true);
+
+   const pc = initPeerConnection();
+
+   const offer = await pc.createOffer();
+   await pc.setLocalDescription(offer)
+   socket.emit("offer",{senderId:curentuser,receiverId:callreciverId,offer});
    console.log(offer);
 }
 
-
-
-     
     return (
         <>
        {
@@ -261,6 +353,26 @@ const onCallhandler = async(callreciverId)=>{
         You
       </span>
     </div>
+
+    {/* Bottom Control Bar overlay (Cut & Screenshot buttons) */}
+    {isCallActive && (
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-black/60 backdrop-blur-md px-6 py-3 rounded-full border border-white/10 z-10">
+        <button
+          onClick={takeScreenshot}
+          className="flex items-center justify-center h-10 w-10 rounded-full bg-white/20 hover:bg-white/30 text-white transition active:scale-95"
+          title="Take Screenshot of Remote Screen"
+        >
+          <FaCamera size={18} />
+        </button>
+        <button
+          onClick={() => handleEndCall(true)}
+          className="flex items-center justify-center h-12 w-12 rounded-full bg-red-500 hover:bg-red-600 text-white transition active:scale-95 shadow-lg shadow-red-500/30"
+          title="End Call"
+        >
+          <FaPhone size={20} className="rotate-[135deg]" />
+        </button>
+      </div>
+    )}
   </div>}
 
   {/* ===== Sidebar: contacts / register ===== */}
