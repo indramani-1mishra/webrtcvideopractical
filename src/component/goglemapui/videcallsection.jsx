@@ -11,6 +11,10 @@ export default function VideoCallSection() {
     
     const peerConnection = useRef(null);
     const localStreamref = useRef(null);
+    const currentUserRef = useRef('');
+    const currentCallingUserRef = useRef('');
+    const [localStream, setLocalStream] = useState(null);
+    const [remoteStream, setRemoteStream] = useState(null);
     const [inputvalue,setinputvalue] = useState('');
     const [curentuser,setcurrentuser] = useState('');
     const [allusers,setallusers]=useState(null);
@@ -22,8 +26,7 @@ export default function VideoCallSection() {
     
 
     useEffect(() => {
-    async function init() {
-        peerConnection.current = new RTCPeerConnection({
+        const pc = new RTCPeerConnection({
             iceServers: [
                 {
                     urls: "stun:stun.l.google.com:19302",
@@ -31,125 +34,123 @@ export default function VideoCallSection() {
             ],
         });
 
-        if (!navigator.mediaDevices) {
-            alert("mediaDevices not supported");
-            return;
-        }
+        peerConnection.current = pc;
 
-        if (!navigator.mediaDevices.getUserMedia) {
-            alert("getUserMedia not supported");
-            return;
-        }
+        pc.ontrack = (event) => {
+            setRemoteStream(event.streams[0]);
+        };
 
-        let stream = null;
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: true,
+        pc.onicecandidate = (event) => {
+            if (!event.candidate) return;
+            if (!currentUserRef.current || !currentCallingUserRef.current) return;
+
+            socket.emit("ice-candidate", {
+                senderId: currentUserRef.current,
+                receiverId: currentCallingUserRef.current,
+                candidate: event.candidate,
             });
-        } catch (error) {
-            console.warn("Media permission denied or unavailable, using fallback video.", error);
-           
-        }
+        };
 
-        if (stream) {
-            localStreamref.current = stream;
-            if (localVideoRef.current) {
-                localVideoRef.current.srcObject = stream;
-            }
-
-            stream.getTracks().forEach((track) => {
-                peerConnection.current.addTrack(track, stream);
-            });
-        } 
-
-        socket.on("getallusers",(users)=>{
+        socket.on("getallusers", (users) => {
             console.log(JSON.stringify(users));
-            if(users){
+            if (users) {
                 setallusers(users);
             }
-        })
-       peerConnection.current.ontrack = (event) => {
-        remoteVideoStream.current.srcObject = event.streams[0];
-        };
-       
+        });
 
-    }
+        socket.on("ice-candidate", async (data) => {
+            const { candidate } = data;
+            if (!candidate) return;
 
-     
-    socket.on("ice-candidate", async (data) => {
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                console.log("ICE Candidate Added");
+            } catch (err) {
+                console.error("ICE Error", err);
+            }
+        });
 
-    const { candidate } = data;
+        socket.on("offer", async (data) => {
+            const { senderId, receiverId, offer } = data;
+            console.log("Offer received", senderId, receiverId, offer);
 
-    try {
+            await pc.setRemoteDescription(offer);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
 
-        await peerConnection.current.addIceCandidate(
-            new RTCIceCandidate(candidate)
-        );
+            socket.emit("answer", {
+                senderId: receiverId,
+                receiverId: senderId,
+                answer,
+            });
 
-        console.log("ICE Candidate Added");
+            setcurrtCallinguser(senderId);
+        });
 
-    } catch (err) {
+        socket.on("answer", async (data) => {
+            const { answer } = data;
+            if (!answer) return;
+            await pc.setRemoteDescription(answer);
+        });
 
-        console.error("ICE Error", err);
+        async function enableLocalCamera() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert("mediaDevices/getUserMedia not supported");
+                return;
+            }
 
-    }
-
-});
-
-    init();
-
-    return () => {
-        localStreamref.current?.getTracks().forEach((track) => track.stop());
-        peerConnection.current?.close();
-    };
-}, []);
- 
-  useEffect(()=>{
-   
-     socket.on("offer",async(data)=>{
-         const {senderId,receiverId,offer} = data;
-         console.log(senderId,receiverId,offer)
-         await peerConnection.current.setRemoteDescription(offer);
-         const answer = await peerConnection.current.createAnswer();
-         console.log(answer)
-          await peerConnection.current.setLocalDescription(answer);
-
-         socket.emit('answer',{senderId:receiverId,receiverId:senderId,answer});
-  
-        }) 
-
-     socket.on("answer",async(data)=>{
-      const {senderId,receiverId,answer} = data;
-        console.log(senderId,receiverId,answer); 
-       await peerConnection.current.setRemoteDescription(answer);
-     }) 
-
-
-   peerConnection.current.onicecandidate = (event) => {
-        if(event.candidate){
-         socket.emit("ice-candidate", {
-        senderId: curentuser,
-        receiverId: currentCallinguser,
-        candidate: event.candidate,
-       });
-
-
-
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: true,
+                });
+                localStreamref.current = stream;
+                setLocalStream(stream);
+                stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+            } catch (error) {
+                console.warn("Media permission denied or unavailable", error);
+            }
         }
-    }
 
-      return ()=>{
-        socket.off("offer");
-        socket.off("answer");
+        enableLocalCamera();
 
-      }
-  },[])
+        return () => {
+            localStreamref.current?.getTracks().forEach((track) => track.stop());
+            pc.close();
+            socket.off("getallusers");
+            socket.off("ice-candidate");
+            socket.off("offer");
+            socket.off("answer");
+        };
+    }, []);
+
+    useEffect(() => {
+        currentUserRef.current = curentuser;
+    }, [curentuser]);
+
+    useEffect(() => {
+        currentCallingUserRef.current = currentCallinguser;
+    }, [currentCallinguser]);
+
+    useEffect(() => {
+        if (localStream && localVideoRef.current) {
+            localVideoRef.current.srcObject = localStream;
+            localVideoRef.current.play().catch(() => {});
+        }
+    }, [localStream]);
+
+    useEffect(() => {
+        if (remoteStream && remoteVideoStream.current) {
+            remoteVideoStream.current.srcObject = remoteStream;
+            remoteVideoStream.current.play().catch(() => {});
+        }
+    }, [remoteStream]);
 
 const onRagisterHandler =()=>{
     socket.emit("join",{userid:inputvalue});
     console.log(inputvalue)
     setcurrentuser(inputvalue);
+    currentUserRef.current = inputvalue;
     setinputvalue("");
     console.log("button click")
 }
@@ -159,6 +160,7 @@ const onCallhandler = async(callreciverId)=>{
    await peerConnection.current.setLocalDescription(offer)
    socket.emit("offer",{senderId:curentuser,receiverId:callreciverId,offer});
    setcurrtCallinguser(callreciverId)
+   currentCallingUserRef.current = callreciverId;
    console.log(offer);
 }
 
@@ -168,7 +170,7 @@ const onCallhandler = async(callreciverId)=>{
     return (
         <>
        {
-        !curentuser && <div className="flex justify-center items-center h-screen">
+        !curentuser &&  currentCallinguser && <div className="flex justify-center items-center h-screen">
             <div className="rounded-2xl bg-white dark:bg-[#111b21] shadow-md ring-1 ring-black/5 p-5 flex flex-col items-center gap-4 text-center 
          
         ">
@@ -207,7 +209,7 @@ const onCallhandler = async(callreciverId)=>{
 <div className="flex flex-col gap-4 md:flex-row md:gap-6 w-full max-w-5xl mx-auto p-3 sm:p-4 md:p-6">
 
   {/* ===== Call Screen ===== */}
-  { curentuser &&  currentCallinguser && <div className="relative w-full md:flex-1 aspect-[3/4] sm:aspect-video md:aspect-[4/3] rounded-2xl overflow-hidden bg-gradient-to-b from-[#111b21] to-[#0b141a] shadow-xl ring-1 ring-black/40">
+  { curentuser && <div className="relative w-full md:flex-1 aspect-[3/4] sm:aspect-video md:aspect-[4/3] rounded-2xl overflow-hidden bg-gradient-to-b from-[#111b21] to-[#0b141a] shadow-xl ring-1 ring-black/40">
 
     {/* Remote video — fills the call screen */}
     <video
