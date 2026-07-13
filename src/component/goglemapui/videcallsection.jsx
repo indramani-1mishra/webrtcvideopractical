@@ -75,6 +75,9 @@ export default function VideoCallSection() {
             const { senderId, receiverId, offer } = data;
             console.log("Offer received", senderId, receiverId, offer);
 
+            // Synchronously update the ref before setting local description (which triggers ICE candidates)
+            currentCallingUserRef.current = senderId;
+
             await pc.setRemoteDescription(offer);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
@@ -96,20 +99,32 @@ export default function VideoCallSection() {
 
         async function enableLocalCamera() {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                alert("mediaDevices/getUserMedia not supported");
+                alert("mediaDevices/getUserMedia is not supported on this browser/context. Note: HTTPS is required on non-localhost hosts.");
                 return;
             }
 
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
-                    audio: true,
-                });
+                let stream;
+                try {
+                    // Try getting both video and audio
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: true,
+                    });
+                } catch (mediaError) {
+                    console.warn("Could not get video and audio (perhaps no microphone?), trying video only...", mediaError);
+                    // Fallback to video only
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: true,
+                        audio: false,
+                    });
+                }
                 localStreamref.current = stream;
                 setLocalStream(stream);
                 stream.getTracks().forEach((track) => pc.addTrack(track, stream));
             } catch (error) {
-                console.warn("Media permission denied or unavailable", error);
+                console.error("Camera access failed:", error);
+                alert("Camera access failed! Please check camera permissions, secure context (HTTPS), or connected devices.");
             }
         }
 
@@ -138,14 +153,14 @@ export default function VideoCallSection() {
             localVideoRef.current.srcObject = localStream;
             localVideoRef.current.play().catch(() => {});
         }
-    }, [localStream]);
+    }, [localStream, curentuser]);
 
     useEffect(() => {
         if (remoteStream && remoteVideoStream.current) {
             remoteVideoStream.current.srcObject = remoteStream;
             remoteVideoStream.current.play().catch(() => {});
         }
-    }, [remoteStream]);
+    }, [remoteStream, curentuser]);
 
 const onRagisterHandler =()=>{
     socket.emit("join",{userid:inputvalue});
