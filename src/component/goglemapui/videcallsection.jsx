@@ -19,6 +19,7 @@ export default function VideoCallSection() {
     const [curentuser,setcurrentuser] = useState('');
     const [allusers,setallusers]=useState(null);
     const [currentCallinguser, setcurrtCallinguser] = useState('');
+    const [isCallActive, setIsCallActive] = useState(false);
     //const [useFallbackVideo, setUseFallbackVideo] = useState(false);
     
    
@@ -161,6 +162,7 @@ const onCallhandler = async(callreciverId)=>{
    socket.emit("offer",{senderId:curentuser,receiverId:callreciverId,offer});
    setcurrtCallinguser(callreciverId)
    currentCallingUserRef.current = callreciverId;
+   setIsCallActive(true);
    console.log(offer);
 }
 
@@ -170,7 +172,8 @@ const onCallhandler = async(callreciverId)=>{
     return (
         <>
        {
-        !curentuser &&  currentCallinguser && <div className="flex justify-center items-center h-screen">
+        !curentuser ? (
+          <div className="flex justify-center items-center h-screen">
             <div className="rounded-2xl bg-white dark:bg-[#111b21] shadow-md ring-1 ring-black/5 p-5 flex flex-col items-center gap-4 text-center 
          
         ">
@@ -204,12 +207,11 @@ const onCallhandler = async(callreciverId)=>{
         </div>
       </div>
       </div>
-       }
-     
-<div className="flex flex-col gap-4 md:flex-row md:gap-6 w-full max-w-5xl mx-auto p-3 sm:p-4 md:p-6">
+       ) : (
+        <div className="flex flex-col gap-4 md:flex-row md:gap-6 w-full max-w-5xl mx-auto p-3 sm:p-4 md:p-6">
 
   {/* ===== Call Screen ===== */}
-  { curentuser && <div className="relative w-full md:flex-1 aspect-[3/4] sm:aspect-video md:aspect-[4/3] rounded-2xl overflow-hidden bg-gradient-to-b from-[#111b21] to-[#0b141a] shadow-xl ring-1 ring-black/40">
+  { curentuser && isCallActive && <div className="relative w-full md:flex-1 aspect-[3/4] sm:aspect-video md:aspect-[4/3] rounded-2xl overflow-hidden bg-gradient-to-b from-[#111b21] to-[#0b141a] shadow-xl ring-1 ring-black/40">
 
     {/* Remote video — fills the call screen */}
     <video
@@ -301,6 +303,8 @@ const onCallhandler = async(callreciverId)=>{
     ) }
   </div>
 </div>
+       )
+      }
    </>
     )
 }

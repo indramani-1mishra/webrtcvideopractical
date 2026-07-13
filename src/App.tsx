@@ -17,6 +17,7 @@ export default function App() {
 return (
     <div>
       <Routes>
+        <Route path="/" element={<VideCallSection />} />
         <Route path="/googlemapui" element={<GoogleMapUi />} /> 
         <Route path="/getlocation" element={<Getlocation />} />
         <Route path="/testurlsearchparam" element={<TestUrlSearchparam  />} />
